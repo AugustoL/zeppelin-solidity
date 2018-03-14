@@ -20,7 +20,7 @@ contract EternalStorage{
 
   address public owner;
 
-  event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
+  event OwnershipTransfered(address indexed previousOwner, address indexed newOwner);
 
   /**
    * @dev The constructor sets the original `owner` of the
