@@ -1,4 +1,4 @@
-pragma solidity ^0.4.18;
+pragma solidity ^0.4.20;
 
 /**
  * @title EternalStorage
@@ -45,7 +45,7 @@ contract EternalStorage{
    */
   function transferOwnership(address newOwner) public onlyOwner {
     require(newOwner != address(0));
-    OwnershipTransferred(owner, newOwner);
+    emit OwnershipTransfered(owner, newOwner);
     owner = newOwner;
   }
 
