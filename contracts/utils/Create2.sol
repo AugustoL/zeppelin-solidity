@@ -1,17 +1,17 @@
 pragma solidity ^0.5.0;
 
 /**
- * @title CREATE2Factory
+ * @title Create2
  *
- * @dev This contract factory focus on the use of CREATE2 EVM opcode for
+ * @dev Utility library that focus on the use of CREATE2 EVM opcode for
  * contracts deployment. It also provides a function to precompute the address
  * where the smart contracts with the specified salt and bytecode would be
  * deployed.
  */
-contract CREATE2Factory {
+library Create2 {
 
     // Event triggered when a contract is deployed
-    event Deployed(address addr, bytes32 salt);
+    event Create2Deployed(address addr, bytes32 salt);
 
     /**
      * @dev Deploy contract with CREATE2
@@ -20,14 +20,29 @@ contract CREATE2Factory {
      */
     function deploy(bytes32 salt, bytes memory code) public {
         address addr = _deploy(salt, code);
-        emit Deployed(addr, salt);
+        emit Create2Deployed(addr, salt);
     }
 
 
     /**
      * @dev Function to compute the address of a contract created with CREATE2.
-     * @param deployer The address of the smart contract that will deploy the
-     * contract
+     * @param salt The salt used to the contract address computation
+     * @param code The bytecode of the contract to be deployed
+     * @return the computed address of the smart contract.
+     */
+    function computeAddress(
+        bytes32 salt, bytes memory code
+    ) public view returns (address) {
+        bytes32 codeHash = keccak256(code);
+        bytes32 _data = keccak256(
+            abi.encodePacked(bytes1(0xff), address(this), salt, codeHash)
+        );
+        return address(bytes20(_data << 96));
+    }
+
+    /**
+     * @dev Function to compute the address of a contract created with CREATE2.
+     * @param deployer the address of the contract that will deploy the contract
      * @param salt The salt used to the contract address computation
      * @param code The bytecode of the contract to be deployed
      * @return the computed address of the smart contract.
@@ -49,7 +64,7 @@ contract CREATE2Factory {
      */
     function _deploy(
         bytes32 _salt, bytes memory _code
-    ) internal returns(address) {
+    ) private returns(address) {
         address _addr;
         // solhint-disable-next-line no-inline-assembly
         assembly {
