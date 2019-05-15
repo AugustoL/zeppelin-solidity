@@ -18,7 +18,7 @@ library Create2 {
      * @param salt The salt used to the contract address computation
      * @param code The bytecode of of the contract to be deployed
      */
-    function deploy(bytes32 salt, bytes memory code) public {
+    function deploy(bytes32 salt, bytes memory code) internal {
         address addr = _deploy(salt, code);
         emit Create2Deployed(addr, salt);
     }
@@ -32,7 +32,7 @@ library Create2 {
      */
     function computeAddress(
         bytes32 salt, bytes memory code
-    ) public view returns (address) {
+    ) internal view returns (address) {
         bytes32 codeHash = keccak256(code);
         bytes32 _data = keccak256(
             abi.encodePacked(bytes1(0xff), address(this), salt, codeHash)
@@ -49,7 +49,7 @@ library Create2 {
      */
     function computeAddress(
         address deployer, bytes32 salt, bytes memory code
-    ) public view returns (address) {
+    ) internal view returns (address) {
         bytes32 codeHash = keccak256(code);
         bytes32 _data = keccak256(
             abi.encodePacked(bytes1(0xff), deployer, salt, codeHash)
