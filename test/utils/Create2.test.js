@@ -2,7 +2,6 @@ const { BN, shouldFail } = require('openzeppelin-test-helpers');
 
 const { buildCreate2Address } = require('../helpers/create2');
 
-const Create2 = artifacts.require('Create2');
 const Create2Impl = artifacts.require('Create2Impl');
 const ERC20Mock = artifacts.require('ERC20Mock');
 
@@ -14,12 +13,10 @@ contract('Create2', function ([_, creator, notCreator]) {
   }`;
 
   beforeEach(async function () {
-    const create2Lib = await Create2.new();
-    await Create2Impl.link("Create2", create2Lib.address);
     this.factory = await Create2Impl.new();
   });
 
-  it.only('should compute the correct contract address', async function () {
+  it('should compute the correct contract address', async function () {
     const onChainComputed = await this.factory
       .computeAddress(creator, saltHex, constructorByteCode);
     const offChainComputed =
@@ -27,7 +24,7 @@ contract('Create2', function ([_, creator, notCreator]) {
     onChainComputed.should.equal(offChainComputed);
   });
 
-  it.only('should deploy a ERC20Mock with correct balances', async function () {
+  it('should deploy a ERC20Mock with correct balances', async function () {
     const offChainComputed =
       buildCreate2Address(this.factory.address, saltHex, constructorByteCode);
     const deployTx = await this.factory
@@ -42,7 +39,7 @@ contract('Create2', function ([_, creator, notCreator]) {
     (await erc20.balanceOf(creator)).should.be.bignumber.equal(new BN(100));
   });
 
-  it.only('should failed deploying a contract in an existent address', async function () {
+  it('should failed deploying a contract in an existent address', async function () {
     await this.factory.deploy(saltHex, constructorByteCode, { from: creator });
     await shouldFail.reverting(
       this.factory.deploy(saltHex, constructorByteCode, { from: creator })
