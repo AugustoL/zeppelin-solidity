@@ -14,17 +14,14 @@ contract WalletFactory {
   }
 
   function deploy(
-    bytes32 salt, address owner, address feeToken, uint256 fee, bytes memory feeSig
+    bytes32 salt, address feeToken, uint256 fee, bytes memory feeSig, uint256 beforeTime
   ) public {
-
       Create2.deploy(salt, code);
       Wallet wallet = Wallet(Create2.computeAddress(salt, code));
 
-      wallet.transferOwnership(owner);
       bytes memory feePaymentData = abi.encodeWithSelector(
         bytes4(keccak256("transfer(address,uint256)")), msg.sender, fee
       );
-      
-      wallet.call(feeToken, feePaymentData, feeSig);
+      wallet.call(feeToken, feePaymentData, feeSig, beforeTime);
   }
 }

@@ -7,16 +7,67 @@ contract Wallet is Ownable {
 
   using ECDSA for bytes32;
 
+  constructor(address owner) public {
+    _transferOwnership(owner);
+  }
+
+  // Used to prevent execution of already executed txs during a timeframe
+  mapping(bytes32 => uint256) pastTxs;
+
+  /**
+   * @dev Call a external contract and pay a fee for the call
+   * @param to The address of the contract to call
+   * @param data ABI-encoded contract call to call `_to` address.
+   * @param sig The hash of the data signed by the wallet owner
+   * @param feeToken The token used for the fee, use wallet address for ETH
+   * @param fee The amount to be payed as fee
+   * @param feeSig The hash of the fee payment signed by the wallet owner
+   * @param beforeTime timetstamp of the time where this tx cant be executed
+   * once it passed
+   */
+  function call(
+    address to, bytes memory data, bytes memory sig,
+    address feeToken, uint256 fee, bytes memory feeSig, uint256 beforeTime
+  ) public payable {
+    require(beforeTime < block.timestamp);
+    bytes32 txHash = keccak256(abi.encodePacked(
+      to, data, sig, feeToken, fee, feeSig
+    ));
+    require(pastTxs[txHash] < block.timestamp);
+
+    address _signer = keccak256(abi.encodePacked(data, beforeTime)).recover(sig);
+    require(owner() == _signer, "Signer is not wallet owner");
+
+    bytes memory feePaymentData = abi.encodeWithSelector(
+      bytes4(keccak256("transfer(address,uint256)")), msg.sender, fee
+    );
+    require(owner() == address(keccak256(feePaymentData).recover(feeSig)), "Fee signer is not wallet owner");
+
+    _call(to, data);
+    _call(feeToken, feePaymentData);
+    pastTxs[txHash] = beforeTime;
+  }
+
   /**
    * @dev Call a external contract
    * @param to The address of the contract to call
    * @param data ABI-encoded contract call to call `_to` address.
    * @param sig The hash of the data signed by the wallet owner
+   * @param beforeTime timetstamp of the time where this tx cant be executed
+   * once it passed
    */
-  function call(address to, bytes memory data, bytes memory sig) public payable {
-    bytes32 dataHash = keccak256(data);
-    require(owner() == address(dataHash.recover(sig)), "Signer is not wallet owner");
+  function call(address to, bytes memory data, bytes memory sig, uint256 beforeTime) public payable {
+    require(beforeTime < block.timestamp);
+    bytes32 txHash = keccak256(abi.encodePacked(
+      to, data, sig
+    ));
+    require(pastTxs[txHash] < block.timestamp);
+
+    address _signer = keccak256(abi.encodePacked(data, beforeTime)).recover(sig);
+    require(owner() == _signer, "Signer is not wallet owner");
+
     _call(to, data);
+    pastTxs[txHash] = beforeTime;
   }
 
   /**
