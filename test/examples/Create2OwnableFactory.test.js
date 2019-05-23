@@ -17,7 +17,7 @@ contract('Create2OwnableFactory', function ([_, creator]) {
     this.factory = await Create2OwnableFactory.new();
   });
 
-  it.only('should deploy a Ownable with correct owner', async function () {
+  it('should deploy a Ownable with correct owner', async function () {
     const offChainComputed =
       buildCreate2Address(this.factory.address, saltHex, constructorByteCode);
     const deployTx = await this.factory
