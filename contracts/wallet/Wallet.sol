@@ -19,30 +19,31 @@ contract Wallet is Ownable {
    * @param to The address of the contract to call
    * @param data ABI-encoded contract call to call `_to` address.
    * @param sig The hash of the data signed by the wallet owner
-   * @param feeToken The token used for the fee, use wallet address for ETH
-   * @param feeAmount The amount to be payed as fee
+   * @param feeToken The token used for the fee, use this wallet address for ETH
+   * @param feeValue The amount to be payed as fee
    * @param beforeTime timetstamp of the time where this tx cant be executed
    * once it passed
    */
   function call(
-    address to, bytes memory data, address feeToken, uint256 feeAmount, bytes memory sig, uint256 beforeTime
+    address to, bytes memory data, address feeToken,
+    uint256 feeValue, uint256 beforeTime, bytes memory sig
   ) public payable {
-    require(beforeTime < block.timestamp);
-    bytes32 txHash = keccak256(abi.encodePacked(
-      to, data, sig, feeToken, feeAmount
-    ));
-    require(pastTxs[txHash] < block.timestamp);
+    require(beforeTime > block.timestamp, "Invalid beforeTime value");
 
-    address _signer = keccak256(abi.encodePacked(to, data, feeToken, feeAmount, beforeTime)).recover(sig);
+    bytes32 txHash = keccak256(abi.encodePacked(to, data, sig, feeToken, feeValue));
+    require(pastTxs[txHash] <= block.timestamp, "TX replay rejected");
+
+    address _signer = keccak256(abi.encodePacked(to, data, feeToken, feeValue, beforeTime))
+      .toEthSignedMessageHash().recover(sig);
     require(owner() == _signer, "Signer is not wallet owner");
 
     bytes memory feePaymentData = abi.encodeWithSelector(
-      bytes4(keccak256("transfer(address,uint256)")), msg.sender, feeAmount
+      bytes4(keccak256("transfer(address,uint256)")), msg.sender, feeValue
     );
 
     _call(to, data);
     _call(feeToken, feePaymentData);
-    pastTxs[txHash] = beforeTime;
+    pastTxs[txHash] = now;
   }
 
   /**
@@ -53,27 +54,30 @@ contract Wallet is Ownable {
    * @param beforeTime timetstamp of the time where this tx cant be executed
    * once it passed
    */
-  function call(address to, bytes memory data, bytes memory sig, uint256 beforeTime) public payable {
-    require(beforeTime < block.timestamp);
-    bytes32 txHash = keccak256(abi.encodePacked(
-      to, data, sig
-    ));
-    require(pastTxs[txHash] < block.timestamp);
+  function call(
+    address to, bytes memory data, uint256 beforeTime, bytes memory sig
+  ) public payable {
+    require(beforeTime > block.timestamp, "Invalid beforeTime value");
 
-    address _signer = keccak256(abi.encodePacked(to, data, beforeTime)).recover(sig);
+    bytes32 txHash = keccak256(abi.encodePacked(to, data, sig));
+    require(pastTxs[txHash] <= block.timestamp, "TX replay rejected");
+
+    address _signer = keccak256(abi.encodePacked(to, data, beforeTime))
+      .toEthSignedMessageHash().recover(sig);
     require(owner() == _signer, "Signer is not wallet owner");
 
     _call(to, data);
-    pastTxs[txHash] = beforeTime;
+    pastTxs[txHash] = now;
   }
 
   /**
    * @dev Transfer eth
-   * @param _to The address to transfer the eth
-   * @param _amount The amount of eth in wei to be transfered
+   * @param to The address to transfer the eth
+   * @param value The amount of eth in wei to be transfered
    */
-  function transfer(address payable _to, uint256 _amount) internal {
-    _to.transfer(_amount);
+  function transfer(address payable to, uint256 value) public {
+    require(msg.sender == address(this));
+    to.transfer(value);
   }
 
   /**
