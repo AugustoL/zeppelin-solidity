@@ -8,103 +8,110 @@ const WalletFactory = artifacts.require('WalletFactory');
 const Wallet = artifacts.require('Wallet');
 const ERC20Mock = artifacts.require('ERC20Mock');
 
-contract('WalletFactory', function ([_, tokenOwner, walletOwner, deployer, otherAccount]) {
-  const salt = 'salt message';
-  const saltHex = web3.utils.soliditySha3(salt);
+contract('WalletFactory', function ([_, tokenOwner, walletOwner, relayer, otherAccount]) {
   const walletBytecode = Wallet.bytecode;
+  let saltHex;
 
   beforeEach(async function () {
     const create2Lib = await Create2.new();
     await WalletFactory.link("Create2", create2Lib.address);
     this.factory = await WalletFactory.new(walletBytecode);
     this.token = await ERC20Mock.new(tokenOwner, 100);
+    saltHex = web3.utils.randomHex(32);
+
+    this.deployWallet = async function(_salt, _tokenFee, _feeValue, _walletOwner, _timeLimit = 60){
+      const constructorData = web3.eth.abi.encodeParameters(['address'], [_walletOwner]);
+      const feePaymentData = web3.eth.abi.encodeFunctionCall({
+        name: 'transfer', type: 'frunction',
+        inputs: [{ type: 'address', name: 'to' },{ type: 'uint256', name: 'value' }]
+      }, [relayer, _feeValue]);
+      const beforeTime = (await time.latest()) + _timeLimit;
+      const walletAddress =
+        buildCreate2Address(this.factory.address, _salt, walletBytecode+constructorData.substring(2));
+      const feePaymentDataSigned = await signMessage(_walletOwner,
+        web3.utils.soliditySha3(_tokenFee, feePaymentData, beforeTime)
+      );
+      const tx = await this.factory
+        .deploy(_salt, _tokenFee, _feeValue, beforeTime, constructorData, feePaymentDataSigned, {from: relayer});
+      return await Wallet.at(walletAddress);
+    }
+
+    this.computeWalletAddress = async function(_salt, _walletOwner){
+      return buildCreate2Address(this.factory.address, _salt,
+        walletBytecode + web3.eth.abi.encodeParameters(['address'], [_walletOwner]).substring(2)
+      );
+    }
+
   });
 
   it.only('should deploy a Wallet contract with correct owner and pay fee in tokens', async function () {
-    const constructorData = web3.eth.abi.encodeParameters(['address'], [walletOwner]);
-    const feePaymentData = web3.eth.abi.encodeFunctionCall({
-      name: 'transfer',
-      type: 'frunction',
-      inputs: [{ type: 'address', name: 'to' },{ type: 'uint256', name: 'value' }]
-    }, [deployer, 30]);
-    const beforeTime = (await time.latest()) + 60;
-    const walletAddress =
-      buildCreate2Address(this.factory.address, saltHex, walletBytecode+constructorData.substring(2));
-    const feePaymentDataSigned = await signMessage(walletOwner,
-      web3.utils.soliditySha3(this.token.address, feePaymentData, beforeTime)
-    );
-    // Send Tokens to wallet by knowing the address before being created
+    const walletAddress = await this.computeWalletAddress(saltHex, walletOwner);
     await this.token.transfer(walletAddress, 50, {from: tokenOwner});
-    const tx = await this.factory.deploy(saltHex, this.token.address, 30, beforeTime, constructorData, feePaymentDataSigned, {from: deployer})
-    const wallet = await Wallet.at(walletAddress);
+    const wallet = await this.deployWallet(saltHex, this.token.address, 30, walletOwner);
 
     (await this.token.balanceOf(tokenOwner)).should.be.bignumber.equal(new BN(50));
-    (await this.token.balanceOf(deployer)).should.be.bignumber.equal(new BN(30));
-    (await this.token.balanceOf(walletOwner)).should.be.bignumber.equal(new BN(0));
+    (await this.token.balanceOf(relayer)).should.be.bignumber.equal(new BN(30));
     (await this.token.balanceOf(wallet.address)).should.be.bignumber.equal(new BN(20));
     (await wallet.owner()).should.be.equal(walletOwner);
-
   });
 
   it.only('should deploy a Wallet contract with correct owner and pay fee in eth', async function () {
-    const constructorData = web3.eth.abi.encodeParameters(['address'], [walletOwner]);
-    const feePaymentData = web3.eth.abi.encodeFunctionCall({
-      name: 'transfer',
-      type: 'frunction',
-      inputs: [{ type: 'address', name: 'to' },{ type: 'uint256', name: 'value' }]
-    }, [deployer, 80]);
-    const beforeTime = (await time.latest()) + 60;
-    const walletAddress =
-      buildCreate2Address(this.factory.address, saltHex, walletBytecode+constructorData.substring(2));
-    const feePaymentDataSig = await signMessage(walletOwner,
-      web3.utils.soliditySha3(walletAddress, feePaymentData, beforeTime)
-    );
-
-    // Send ETH to wallet by knowing the address before being created
+    const walletAddress = await this.computeWalletAddress(saltHex, walletOwner);
     await web3.eth.sendTransaction({from: tokenOwner, to : walletAddress, value: 100});
-    const tx = await this.factory.deploy(saltHex, walletAddress, 80, beforeTime, constructorData, feePaymentDataSig, {from: deployer})
-    const wallet = await Wallet.at(walletAddress);
+    const wallet = await this.deployWallet(saltHex, walletAddress, 80, walletOwner);
 
     (await web3.eth.getBalance(wallet.address)).should.be.equal('20');
     (await wallet.owner()).should.be.equal(walletOwner);
 
   });
 
-  it.only('should deploy a Wallet contract paying with tokens and then pay for another wallet tx', async function () {
-    const constructorData = web3.eth.abi.encodeParameters(['address'], [walletOwner]);
-    let feePaymentData = web3.eth.abi.encodeFunctionCall({
-      name: 'transfer',
-      type: 'frunction',
-      inputs: [{ type: 'address', name: 'to' },{ type: 'uint256', name: 'value' }]
-    }, [deployer, 30]);
-    let beforeTime = (await time.latest()) + 60;
-    const walletAddress =
-      buildCreate2Address(this.factory.address, saltHex, walletBytecode+constructorData.substring(2));
-    let feePaymentDataSig = await signMessage(walletOwner,
-      web3.utils.soliditySha3(this.token.address, feePaymentData, beforeTime)
-    );
-    // Send Tokens to wallet by knowing the address before being created
+  it.only('should transfer tokens and pay fee in tokens', async function () {
+    const walletAddress = await this.computeWalletAddress(saltHex, walletOwner);
     await this.token.transfer(walletAddress, 50, {from: tokenOwner});
-    await this.factory.deploy(saltHex, this.token.address, 30, beforeTime, constructorData, feePaymentDataSig, {from: deployer})
-    const wallet = await Wallet.at(walletAddress);
+    const wallet = await this.deployWallet(saltHex, this.token.address, 30, walletOwner);
 
-    let sendTokensData = web3.eth.abi.encodeFunctionCall({
+    const sendTokensData = web3.eth.abi.encodeFunctionCall({
       name: 'transfer',
       type: 'frunction',
       inputs: [{ type: 'address', name: 'to' },{ type: 'uint256', name: 'value' }]
     }, [otherAccount, 19]);
-    beforeTime = (await time.latest()) + 60;
+    const beforeTime = (await time.latest()) + 60;
     const sendTokensDataSig = await signMessage(walletOwner,
       web3.utils.soliditySha3(this.token.address, sendTokensData, this.token.address, 1, beforeTime)
     );
-    await wallet.call(this.token.address, sendTokensData, this.token.address, 1, beforeTime, sendTokensDataSig, {from: deployer});
+    await wallet.call(this.token.address, sendTokensData, this.token.address, 1, beforeTime, sendTokensDataSig, {from: relayer});
 
     (await this.token.balanceOf(tokenOwner)).should.be.bignumber.equal(new BN(50));
-    (await this.token.balanceOf(deployer)).should.be.bignumber.equal(new BN(31));
-    (await this.token.balanceOf(walletOwner)).should.be.bignumber.equal(new BN(0));
+    (await this.token.balanceOf(relayer)).should.be.bignumber.equal(new BN(31));
     (await this.token.balanceOf(otherAccount)).should.be.bignumber.equal(new BN(19));
     (await this.token.balanceOf(wallet.address)).should.be.bignumber.equal(new BN(0));
-    (await wallet.owner()).should.be.equal(walletOwner);
+
+  });
+
+  it.only('should protect a token transfer against replay', async function () {
+    const walletAddress = await this.computeWalletAddress(saltHex, walletOwner);
+    await this.token.transfer(walletAddress, 50, {from: tokenOwner});
+    const wallet = await this.deployWallet(saltHex, this.token.address, 30, walletOwner);
+
+    const sendTokensData = web3.eth.abi.encodeFunctionCall({
+      name: 'transfer',
+      type: 'frunction',
+      inputs: [{ type: 'address', name: 'to' },{ type: 'uint256', name: 'value' }]
+    }, [otherAccount, 1]);
+    const beforeTime = (await time.latest()) + 1000;
+    const sendTokensDataSig = await signMessage(walletOwner,
+      web3.utils.soliditySha3(this.token.address, sendTokensData, this.token.address, 1, beforeTime)
+    );
+    await wallet.call(this.token.address, sendTokensData, this.token.address, 1, beforeTime, sendTokensDataSig, {from: relayer});
+
+    await shouldFail.reverting(
+      wallet.call(this.token.address, sendTokensData, this.token.address, 1, beforeTime, sendTokensDataSig, {from: relayer})
+    );
+
+    (await this.token.balanceOf(tokenOwner)).should.be.bignumber.equal(new BN(50));
+    (await this.token.balanceOf(relayer)).should.be.bignumber.equal(new BN(31));
+    (await this.token.balanceOf(otherAccount)).should.be.bignumber.equal(new BN(1));
+    (await this.token.balanceOf(wallet.address)).should.be.bignumber.equal(new BN(18));
 
   });
 });
